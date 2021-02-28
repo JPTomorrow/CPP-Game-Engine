@@ -4,5 +4,5 @@ call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliar
 
 mkdir .\build
 pushd .\build
-cl -Zi ..\code\CPPGameEngine.cpp user32.lib
+cl -Zi -FC ..\code\CPPGameEngine.cpp user32.lib gdi32.lib
 popd
