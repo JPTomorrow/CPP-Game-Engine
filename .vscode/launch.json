@@ -13,7 +13,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/res",
             "environment": [],
-            "console": "externalTerminal"
+            "console": "internalConsole"
         }
     ]
 }
