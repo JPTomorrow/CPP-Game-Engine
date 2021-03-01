@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <stdint.h>
 #include <Xinput.h>
+#include <dsound.h>
 
 #define internal static  // use for functions that are private to file scope
 #define local_persist static  // use for local scope static variables
@@ -15,6 +16,8 @@ typedef int8_t  int8;
 typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
+
+typedef int32 bool32;
 
 struct win32_offscreen_buffer{
     /*
@@ -42,7 +45,7 @@ global_variable win32_offscreen_buffer GlobalBackBuffer;
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(XInputGetStateStub) {
-    return 0;
+    return ERROR_DEVICE_NOT_CONNECTED; // error returned if library can not be found to avoid crashes
 }
 global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub; // dynamically loaded functions
 #define XInputGetState XInputGetState_ // remap to avoid naming conflict
@@ -50,7 +53,7 @@ global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub; // dyna
 #define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(XInputSetStateStub) {
-    return 0;
+    return ERROR_DEVICE_NOT_CONNECTED;
 }
 global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
@@ -60,13 +63,112 @@ global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 // passthrough on a the stub in library doesnt exist
 //
 internal void Win32LoadXInput() {
-    HMODULE x_input_library = LoadLibrary("xinput1_3.dll");
+    HMODULE x_input_library = LoadLibrary("xinput1_4.dll");
+    if(!x_input_library) {
+        // TODO: maybe diagnostic
+        x_input_library = LoadLibrary("xinput1_3.dll");
+    }
+    
     if(x_input_library) {
         // load the specific functions that we need, stubs are above this function
         XInputGetState = (x_input_get_state *)GetProcAddress(x_input_library, "XInputGetState");
+        if(!XInputGetState) { XInputGetState = XInputGetStateStub; }
+         
         XInputSetState = (x_input_set_state *)GetProcAddress(x_input_library, "XInputSetState");
+        if(!XInputSetState) { XInputSetState = XInputSetStateStub; }
+
+        // TODO: diagnostics
+    }
+    else {
+        // TODO: diagnostics
     }
 }
+
+//
+// Direct Sound
+//
+
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
+typedef DIRECT_SOUND_CREATE(dsound_create);
+
+
+internal void Win32InitDSound(HWND window, int32 samples_per_sound, int32 buffer_size) { 
+    // intialize the sound and start playing
+
+    // load the library
+    HMODULE dsound_library = LoadLibrary("dsound.dll");
+
+    if(dsound_library) {
+
+        // get direct sound object
+        dsound_create *DirectSoundCreate = (dsound_create *)GetProcAddress(dsound_library, "DirectSoundCreate");
+        IDirectSound *dsound; 
+
+        if(DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &dsound, 0))) {
+
+            WAVEFORMATEX wave_format = {};
+            wave_format.wFormatTag = WAVE_FORMAT_PCM;
+            wave_format.nChannels = 2;
+            wave_format.nSamplesPerSec = samples_per_sound;
+            wave_format.nBlockAlign = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
+            wave_format.nAvgBytesPerSec = wave_format.nSamplesPerSec * wave_format.nBlockAlign;
+            wave_format.wBitsPerSample = 16;
+            wave_format.cbSize = 0;
+
+            if(SUCCEEDED(dsound->SetCooperativeLevel(window, DSSCL_PRIORITY))) {
+                
+                // create a primary buffer
+                DSBUFFERDESC buffer_description = {};
+                buffer_description.dwFlags = DSBCAPS_PRIMARYBUFFER;
+                buffer_description.dwSize = sizeof(buffer_description);
+
+                IDirectSoundBuffer *primary_buffer;
+
+                if(SUCCEEDED(dsound->CreateSoundBuffer(&buffer_description, &primary_buffer, 0))) {
+                    if(SUCCEEDED(primary_buffer->SetFormat(&wave_format))) {
+                        // format has been set
+                        OutputDebugStringA("Primary buffer format was set\n");
+                    }
+                    else {
+                        // TODO: diagnostic
+                    }
+                }
+            }
+            else {
+                // TODO: diagnostic
+            }
+            
+            // create secondary buffer
+            DSBUFFERDESC buffer_description = {};
+            buffer_description.dwFlags = 0;
+            buffer_description.dwSize = sizeof(buffer_description);
+            buffer_description.dwBufferBytes = buffer_size;
+            buffer_description.lpwfxFormat = &wave_format;
+            IDirectSoundBuffer *secondary_buffer;
+
+            if(SUCCEEDED(dsound->CreateSoundBuffer(&buffer_description, &secondary_buffer, 0))) {
+                OutputDebugStringA("Primary buffer created\n");
+            }
+            else {
+                // TODO: diagnostic
+            }
+
+            
+
+            // start playing sound
+        }
+        else {
+            // TODO: diagnostics
+        }
+    }
+    else {
+        // TODO: diagnostics
+    }
+}
+
+//
+// Graphics
+//
 
 internal win32_window_dimension Win32GetWindowDimension(HWND window)
 {
@@ -214,6 +316,11 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             else if(vkcode == VK_SPACE) {
 
             }
+
+            bool32 alt_key_was_down = (lParam & (1 << 29));
+            if(vkcode == VK_F4 && alt_key_was_down) {
+                Running = false;
+            }
         } break;
 
         case WM_PAINT:
@@ -266,9 +373,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             0);
 
         if(window) {
+
+            HDC device_context = GetDC(window);
+
             int x_off = 0;
             int y_off = 0;
-            HDC device_context = GetDC(window);
+            
+            Win32InitDSound(window, 48000, 48000 * sizeof(int16) * 2);
 
             Running = true;
             while(Running) {
