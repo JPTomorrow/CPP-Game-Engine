@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <Xinput.h>
 #include <dsound.h>
+#include <math.h>
 
 #define internal static  // use for functions that are private to file scope
 #define local_persist static  // use for local scope static variables
@@ -18,6 +19,9 @@ typedef int32_t int32;
 typedef int64_t int64;
 
 typedef int32 bool32;
+
+typedef float real32;
+typedef double real64;
 
 struct win32_offscreen_buffer{
     /*
@@ -387,14 +391,14 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             int samples_per_second = 48000;
             int tone_hz = 256;
             int running_sample_idx = 0;
-            int square_wave_period = samples_per_second / tone_hz;
-            int half_square_wave_period = square_wave_period / 2;
+            int wave_period = samples_per_second / tone_hz;
+            int half_wave_period = wave_period / 2;
             int bytes_per_sample = sizeof(int16) * 2;
             int secondary_buffer_size = samples_per_second * bytes_per_sample;
             int tone_volume = 1000;
 
             Win32InitDSound(window, samples_per_second, secondary_buffer_size);
-            SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+            bool32 sound_is_playing = false;
 
             Running = true;
             while(Running) {
@@ -460,6 +464,8 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                 {
                     DWORD byte_to_lock = running_sample_idx * bytes_per_sample % secondary_buffer_size;
                     DWORD bytes_to_write;
+
+                    // we need a more accurate check than (byte to lock == play cursor)
                     if(byte_to_lock > play_cursor) 
                     {
                         bytes_to_write = (secondary_buffer_size - byte_to_lock);
@@ -486,7 +492,9 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                         
                         for (DWORD sample_idx = 0; sample_idx < region1_sample_count; ++sample_idx)
                         {
-                            int16 sample_value = ((running_sample_idx++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
+                            real32 sine_value;
+                            // int16 sample_value = ;
+                            int16 sample_value = ((running_sample_idx++ / half_wave_period) % 2) ? tone_volume : -tone_volume;
                             *sample_out++ = sample_value;
                             *sample_out++ = sample_value;
                         }
@@ -496,13 +504,19 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
                         for(DWORD sample_idx = 0; sample_idx < region2_sample_count; ++sample_idx)
                         {
-                            int16 sample_value = ((running_sample_idx++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
+                            int16 sample_value = ((running_sample_idx++ / half_wave_period) % 2) ? tone_volume : -tone_volume;
                             *sample_out++ = sample_value;
                             *sample_out++ = sample_value;
                         }
 
                         SecondaryBuffer->Unlock(region1, region1_size, region2, region2_size);
                     }
+                }
+                
+                if(!sound_is_playing)
+                {
+                    SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+                    sound_is_playing = true;
                 }
 
                 RenderWeirdGradient(&GlobalBackBuffer, x_off,y_off);
