@@ -12,13 +12,14 @@
 
 #if !defined(APPLICATION_H)
 
-#if HANDMADE_SLOW
+#if APPLICATION_SLOW
 // TODO: Complete assertion macro
 #define Assert(Expression) if(!(Expression)) {*(int *)0 = 0;}
 #else
 #define Assert(Expression)
 #endif
 
+// define hard memory values with this
 #define Kilobytes(Value) ((Value)*1024LL)
 #define Megabytes(Value) (Kilobytes(Value)*1024LL)
 #define Gigabytes(Value) (Megabytes(Value)*1024LL)
@@ -30,6 +31,23 @@
 /*
   TODO: Services that the platform layer provides to the game
 */
+
+#if APPLICATION_INTERNAL
+/* IMPORTANT:
+
+   These are NOT for doing anything in the shipping game - they are
+   blocking and the write doesn't protect against lost data!
+*/
+struct debug_read_file_result
+{
+    uint32 ContentsSize;
+    void *Contents;
+};
+
+internal debug_read_file_result DEBUGPlatformReadEntireFile(char *Filename);
+internal void DEBUGPlatformFreeFileMemory(void *Memory);
+internal bool32 DEBUGPlatformWriteEntireFile(char *Filename, uint32 MemorySize, void *Memory);
+#endif
 
 /*
   NOTE: Services that the game provides to the platform layer.
@@ -102,28 +120,26 @@ struct application_input
 };
 
 // persistent memory so that we never have to allocate memory during runtime 
-struct game_memory
+struct application_memory
 {
     bool32 IsInitialized;
 
-    uint64 PermanentStorageSize;
+    uint64 PermanentStorageSize; // permanent storage for the application
     void *PermanentStorage; // NOTE: REQUIRED to be cleared to zero at startup
 
-    uint64 TransientStorageSize;
+    uint64 TransientStorageSize; // storage for carrying over information from a previous frame
     void *TransientStorage; // NOTE: REQUIRED to be cleared to zero at startup
 };
 
-struct game_state
+struct application_state
 {
     int ToneHz;
     int GreenOffset;
     int BlueOffset;
 };
 
-void GameUpdateAndRender(game_memory *memory, application_input *input, offscreen_graphics_buffer *buffer, 
+void GameUpdateAndRender(application_memory *memory, application_input *input, offscreen_graphics_buffer *buffer, 
                          application_sound_output_buffer *sound_buffer);
-
-
 
 #define APPLICATION_H
 #endif

@@ -1,4 +1,11 @@
 /*
+    This is the platform layer of this engine.
+
+    Author:Justin Morrow
+    Created On: 2/26/2021
+*/
+
+/*
   - Saved game locations
   - Getting a handle to our own executable file
   - Asset loading path
@@ -47,14 +54,11 @@ typedef double real64;
 
 #include "application.h"
 #include "application.cpp"
-
 #include "win32_platform_layer.h"
 
-struct win32_window_dimension
-{
-    int Width;
-    int Height;
-};
+//
+// Input
+//
 
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
@@ -72,10 +76,7 @@ X_INPUT_SET_STATE(XInputSetStateStub) {
 global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 
-//
-// load the XInput library functions required or 
-// passthrough on a the stub in library doesnt exist
-//
+// load XInput library
 internal void Win32LoadXInput() {
     HMODULE x_input_library = LoadLibrary("xinput1_4.dll");
     if(!x_input_library) {
@@ -103,6 +104,7 @@ internal void Win32LoadXInput() {
     }
 }
 
+// Process a digital button press from an XInput controller
 internal void Win32ProcessXInputDigitalButton(
     DWORD x_input_button_state,
     application_button_state *old_state, DWORD button_bit,
@@ -113,7 +115,7 @@ internal void Win32ProcessXInputDigitalButton(
 }
 
 //
-// Direct Sound
+// Sound
 //
 
 global_variable IDirectSoundBuffer *SecondaryBuffer;
@@ -121,6 +123,7 @@ global_variable IDirectSoundBuffer *SecondaryBuffer;
 #define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
 typedef DIRECT_SOUND_CREATE(dsound_create);
 
+// Initialize DirectSound
 internal void Win32InitDSound(HWND window, int32 samples_per_sound, int32 buffer_size) 
 { 
     // intialize the sound and start playing
@@ -207,19 +210,7 @@ internal void Win32InitDSound(HWND window, int32 samples_per_sound, int32 buffer
     }
 }
 
-struct win32_sound_output
-{
-    int SamplesPerSecond;
-    int ToneHz;
-    int16 ToneVolume;
-    uint32 RunningSampleIndex;
-    int WavePeriod;
-    int BytesPerSample;
-    int SecondaryBufferSize;
-    real32 tSine;
-    int LatencySampleCount;
-};
-
+// clear the sound buffer buffer
 internal void Win32ClearBuffer(win32_sound_output *sound_output)
 {
     VOID *region1;
@@ -252,6 +243,7 @@ internal void Win32ClearBuffer(win32_sound_output *sound_output)
     }
 }
 
+// fill the sound buffer with the bytes provided
 internal void Win32FillSoundBuffer(win32_sound_output *sound_output, DWORD byte_to_lock, DWORD bytes_to_write,
                      application_sound_output_buffer *source_buffer)
 {
@@ -295,18 +287,10 @@ internal void Win32FillSoundBuffer(win32_sound_output *sound_output, DWORD byte_
 // Graphics
 //
 
-struct win32_offscreen_buffer
-{
-    BITMAPINFO Info;
-    void *Memory;
-    int Width;
-    int Height;
-    int Pitch;
-};
-
 global_variable bool Running;
 global_variable win32_offscreen_buffer GlobalBackBuffer;
 
+// get the dimensions of the provided window handle
 internal win32_window_dimension Win32GetWindowDimension(HWND window)
 {
     win32_window_dimension Result;
@@ -319,7 +303,6 @@ internal win32_window_dimension Win32GetWindowDimension(HWND window)
     return(Result);
 }
 
-// 
 // Resize the window buffer that is passed in
 internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, int height) 
 {
@@ -349,9 +332,7 @@ internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, i
     // probably clear to black
 }
 
-//
 // diplay the passed buffer to the screen
-//
 internal void Win32DisplayBufferInWindow(
     win32_offscreen_buffer *buffer, HDC device_context, 
     int window_width, int window_height)
@@ -365,9 +346,7 @@ internal void Win32DisplayBufferInWindow(
                   DIB_RGB_COLORS, SRCCOPY);
 }
 
-//
-// Message Pump
-//
+// message pump
 LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     LRESULT result = 0;
@@ -457,6 +436,11 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
     return result;
 }
 
+//
+// ENTRY POINT
+//
+
+// the main entry point for this program
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode)
 {
     // timer stuff
@@ -524,18 +508,18 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             LPVOID base_address = 0;
 #endif
 
-            game_memory master_game_memory = {};
-            master_game_memory.PermanentStorageSize = Megabytes(64);
-            master_game_memory.TransientStorageSize = Gigabytes(4);
+            application_memory app_memory = {};
+            app_memory.PermanentStorageSize = Megabytes(64);
+            app_memory.TransientStorageSize = Gigabytes(4);
 
             // TODO(casey): Handle various memory footprints (USING SYSTEM METRICS)
-            uint64 total_size = master_game_memory.PermanentStorageSize + master_game_memory.TransientStorageSize;
-            master_game_memory.PermanentStorage = VirtualAlloc(base_address, total_size,
+            uint64 total_size = app_memory.PermanentStorageSize + app_memory.TransientStorageSize;
+            app_memory.PermanentStorage = VirtualAlloc(base_address, total_size,
                                                        MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-            master_game_memory.TransientStorage = ((uint8 *)master_game_memory.PermanentStorage +
-                                           master_game_memory.PermanentStorageSize);
+            app_memory.TransientStorage = ((uint8 *)app_memory.PermanentStorage +
+                                           app_memory.PermanentStorageSize);
 
-            if(samples && master_game_memory.PermanentStorage && master_game_memory.TransientStorage)
+            if(samples && app_memory.PermanentStorage && app_memory.TransientStorage)
             {
                 application_input input[2] = {};
                 application_input *new_input = &input[0];
@@ -687,7 +671,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                     b.Width = GlobalBackBuffer.Width; 
                     b.Height = GlobalBackBuffer.Height;
                     b.Pitch = GlobalBackBuffer.Pitch; 
-                    GameUpdateAndRender(&master_game_memory, new_input, &b, &sound_buffer);
+                    GameUpdateAndRender(&app_memory, new_input, &b, &sound_buffer);
 
                     if(is_sound_valid)
                     {
@@ -724,11 +708,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                 // TODO: logging for memory
             }
         }
-        else {
+        else 
+        {
             // TODO: Logging
         }
     }
-    else {
+    else 
+    {
         // TODO: Logging
     }
 
