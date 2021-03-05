@@ -502,7 +502,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             int16 *samples = (int16 *)VirtualAlloc(0, sound_output.SecondaryBufferSize,
                                                    MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 
-#if HANDMADE_INTERNAL
+#if APPLICATION_INTERNAL
             LPVOID base_address = (LPVOID)Terabytes(2);
 #else
             LPVOID base_address = 0;

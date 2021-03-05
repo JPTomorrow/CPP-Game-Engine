@@ -61,7 +61,7 @@ void GameUpdateAndRender(
     offscreen_graphics_buffer * buffer, 
     application_sound_output_buffer *sound_buffer)
 {
-    Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
+    Assert(sizeof(application_state) <= memory->PermanentStorageSize);
     
     application_state *app_state = (application_state *)memory->PermanentStorage;
     if(!memory->IsInitialized)
