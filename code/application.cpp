@@ -56,8 +56,48 @@ void RenderWeirdGradient(offscreen_graphics_buffer *buffer, int x_offset, int y_
     }
 }
 
-void GameUpdateAndRender(offscreen_graphics_buffer *buffer, application_sound_output_buffer *sound_buffer, int tone_hz, int blue_offset, int green_offset)
+void GameUpdateAndRender(
+    game_memory *memory, application_input *input,  offscreen_graphics_buffer * buffer, application_sound_output_buffer *sound_buffer)
 {
+    Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
+    
+    game_state *master_game_state = (game_state *)memory->PermanentStorage;
+    if(!memory->IsInitialized)
+    {
+        master_game_state->ToneHz = 256;
+
+        // TODO(casey): This may be more appropriate to do in the platform layer
+        memory->IsInitialized = true;
+    }
+
+
+    local_persist int blue_offset = 0;
+    local_persist int green_offset = 0;
+    local_persist int tone_hz = 256;
+
+    // player 1 input
+    application_controller_input *input0 = &input->Controllers[0];
+    
+    if(input0->IsAnalog)
+    {
+        real32 x_offset_speed = 4.0f;
+        real32 y_offset_speed = 128.0f;
+        
+        blue_offset += (int)x_offset_speed*(input0->EndX);
+        tone_hz = 256 + (int)y_offset_speed*(input0->EndY);
+    }
+    else
+    {
+        // NOTE(casey): Use digital movement tuning
+    }
+
+    // Input.AButtonEndedDown;
+    // Input.AButtonHalfTransitionCount;
+    if(input0->Down.EndedDown)
+    {
+        green_offset += 1;
+    }
+    
     GameOutputSound(sound_buffer, tone_hz);
     RenderWeirdGradient(buffer, blue_offset, green_offset);
 }
