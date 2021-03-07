@@ -26,31 +26,40 @@
 #define Terabytes(Value) (Gigabytes(Value)*1024LL)
 
 // easy count the elements in an array
-#define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0])) 
+#define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
+
+inline uint32 SafeTruncateUInt64(uint64 value)
+{
+    // TODO: Defines for maximum values
+    Assert(value <= 0xFFFFFFFF);
+    uint32 result = (uint32)value;
+    return(result);
+}
 
 /*
-  TODO: Services that the platform layer provides to the game
+  TODO: Services that the platform layer provides to the application
 */
 
-#if APPLICATION_INTERNAL
-/* IMPORTANT:
-
-   These are NOT for doing anything in the shipping game - they are
-   blocking and the write doesn't protect against lost data!
-*/
 struct debug_read_file_result
 {
     uint32 ContentsSize;
     void *Contents;
 };
 
-internal debug_read_file_result DEBUGPlatformReadEntireFile(char *Filename);
-internal void DEBUGPlatformFreeFileMemory(void *Memory);
-internal bool32 DEBUGPlatformWriteEntireFile(char *Filename, uint32 MemorySize, void *Memory);
+#if APPLICATION_INTERNAL
+/* IMPORTANT:
+
+   These are NOT for doing anything in the shipping application - they are
+   blocking and the write doesn't protect against lost data!
+*/
+
+internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename);
+internal void DEBUGPlatformFreeFileMemory(void *memory);
+internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32 memory_size, void *memory);
 #endif
 
 /*
-  NOTE: Services that the game provides to the platform layer.
+  NOTE: Services that the application provides to the platform layer.
 */
 
 // FOUR THINGS - timing, controller/keyboard input, bitmap buffer to use, sound buffer to use
@@ -84,40 +93,47 @@ struct application_button_state
 };
 
 struct application_controller_input
-{
+{   
+    bool32 IsConnected;
     bool32 IsAnalog;
-    
-    real32 StartX;
-    real32 StartY;
-
-    real32 MinX;
-    real32 MinY;
-
-    real32 MaxX;
-    real32 MaxY;
-    
-    real32 EndX;
-    real32 EndY;
+    real32 StickAverageX;
+    real32 StickAverageY;
     
     union
     {
-        application_button_state Buttons[6];
+        application_button_state Buttons[12];
         struct
         {
-            application_button_state Up;
-            application_button_state Down;
-            application_button_state Left;
-            application_button_state Right;
+            application_button_state MoveUp;
+            application_button_state MoveDown;
+            application_button_state MoveLeft;
+            application_button_state MoveRight;
+
+            application_button_state ActionUp;
+            application_button_state ActionDown;
+            application_button_state ActionLeft;
+            application_button_state ActionRight;
+
             application_button_state LeftShoulder;
             application_button_state RightShoulder;
+
+            application_button_state Back;
+            application_button_state Start;
         };
     };
 };
 
 struct application_input
 {
-    application_controller_input Controllers[4];
+    application_controller_input Controllers[5];
 };
+
+inline application_controller_input *GetController(application_input *input, int controller_idx)
+{
+    Assert(controller_idx < ArrayCount(input->Controllers));
+    application_controller_input *result = &input->Controllers[controller_idx];
+    return result;
+}
 
 // persistent memory so that we never have to allocate memory during runtime 
 struct application_memory
@@ -138,7 +154,7 @@ struct application_state
     int BlueOffset;
 };
 
-void GameUpdateAndRender(application_memory *memory, application_input *input, offscreen_graphics_buffer *buffer, 
+void ApplicationUpdateAndRender(application_memory *memory, application_input *input, offscreen_graphics_buffer *buffer, 
                          application_sound_output_buffer *sound_buffer);
 
 #define APPLICATION_H

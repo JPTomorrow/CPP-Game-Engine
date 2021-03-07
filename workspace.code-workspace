@@ -4,5 +4,25 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"files.exclude": {
+			"**/handmade_hero_ref": true,
+			"**/handmade": true,
+
+			"**/.git": true,
+			"**/.svn": true,
+			"**/.hg": true,
+			"**/CVS": true,
+			"**/.DS_Store": true
+		},
+		"search.exclude": {
+			"**/handmade_hero_ref": true,
+			"**/handmade": true,
+			"**/data": true,
+			
+			"**/node_modules": true,
+			"**/bower_components": true,
+			"**/*.code-search": true
+		}
+	}
 }

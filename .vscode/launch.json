@@ -11,7 +11,7 @@
             "program": "${workspaceFolder}/build/win32_application.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/res",
+            "cwd": "${workspaceFolder}/data",
             "environment": [],
             "console": "internalConsole"
         }

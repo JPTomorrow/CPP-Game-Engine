@@ -1,14 +1,24 @@
 {
-    // See https://go.microsoft.com/fwlink/?LinkId=733558
-    // for the documentation about the tasks.json format
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build",
+            "label": "build win32 x86",
             "type": "process",
-            "command": "${workspaceFolder}/code/build.bat",
+            "command": "${workspaceFolder}/code/win32_build.bat",
+            "args": [
+                "x86"
+            ],
             "group": "build",
-            // Use the standard MS compiler pattern to detect errors, warnings and infos
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build win32 x64",
+            "type": "process",
+            "command": "${workspaceFolder}/code/win32_build.bat",
+            "args": [
+                "x64"
+            ],
+            "group": "build",
             "problemMatcher": "$msCompile"
         }
     ]
