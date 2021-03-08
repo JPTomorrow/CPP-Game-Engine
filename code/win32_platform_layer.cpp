@@ -204,7 +204,7 @@ internal void Win32InitDSound(HWND window, int32 samples_per_sound, int32 buffer
             
             // create secondary buffer
             DSBUFFERDESC buffer_description = {};
-            buffer_description.dwFlags = 0;
+            buffer_description.dwFlags = DSBCAPS_GETCURRENTPOSITION2;
             buffer_description.dwSize = sizeof(buffer_description);
             buffer_description.dwBufferBytes = buffer_size;
             buffer_description.lpwfxFormat = &wave_format;
@@ -305,6 +305,55 @@ internal void Win32FillSoundBuffer(win32_sound_output *sound_output, DWORD byte_
         SecondaryBuffer->Unlock(region1, region1_size, region2, region2_size);
     }
 }
+
+internal void Win32DebugDrawVertical(
+    win32_offscreen_buffer *back_buffer, int x, 
+    int top, int bottom, uint32 color)
+{
+    uint8 *pixel = (uint8 *)back_buffer->Memory + x * back_buffer->BytesPerPixel + top * back_buffer->Pitch;
+    for (int y = top; y < bottom; ++y)
+    {
+        *(uint32 *)pixel = color;
+        pixel += back_buffer->Pitch;
+    }
+}
+
+inline void Win32DrawSoundBufferMarker(
+    win32_offscreen_buffer *back_buffer, win32_sound_output *sound_output,
+    real32 coefficient, int pad_x, int top, int bottom, DWORD value, uint32 color)
+{
+    Assert(value < sound_output->SecondaryBufferSize);
+    real32 x_real32 = (coefficient * (real32)value);
+    int x = pad_x + (int)x_real32;
+    Win32DebugDrawVertical(back_buffer, x, top, bottom, color);
+}
+
+// display a debug visual of the sound buffer for testing
+internal void Win32DebugSyncSound(
+    win32_offscreen_buffer *back_buffer, 
+    int marker_count, win32_debug_time_marker *markers, 
+    win32_sound_output *sound_output, real32 target_seconds_per_frame)
+{
+    int pad_x = 16;
+    int pad_y = 16;
+
+    int top = pad_y;
+    int bottom = back_buffer->Height - pad_y; 
+
+    real32 cof = (real32)(back_buffer->Width - 2 * pad_x) / (real32)sound_output->SecondaryBufferSize;
+    for (int marker_idx = 0; marker_idx < marker_count; ++marker_idx)
+    {
+        win32_debug_time_marker *this_marker = &markers[marker_idx];
+        Win32DrawSoundBufferMarker(
+            back_buffer, sound_output, cof, pad_x, 
+            top, bottom, this_marker->PlayCursor, 0xFFFFFFFF);
+        Win32DrawSoundBufferMarker(
+            back_buffer, sound_output, cof, pad_x, 
+            top, bottom, this_marker->WriteCursor, 0xFFFF0000);        
+    }
+}
+
+
 
 //
 // File IO
@@ -431,6 +480,7 @@ internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, i
     buffer->Width = width;
     buffer->Height = height;
     int bytes_per_pixel = 4;
+    buffer->BytesPerPixel = bytes_per_pixel;
 
     buffer->Info.bmiHeader.biSize = sizeof(buffer->Info.bmiHeader);
     buffer->Info.bmiHeader.biWidth = buffer->Width;
@@ -442,7 +492,7 @@ internal void Win32ResizeDIBSection(win32_offscreen_buffer *buffer, int width, i
     int bit_map_memory_size = (buffer->Width * buffer->Height) * bytes_per_pixel;
 
     buffer->Memory = VirtualAlloc(0, bit_map_memory_size, MEM_COMMIT, PAGE_READWRITE);
-    buffer->Pitch = width * bytes_per_pixel;
+    buffer->Pitch = width * bytes_per_pixel;    
     // probably clear to black
 }
 
@@ -598,7 +648,24 @@ internal void Win32ProcessPendingMessages(application_controller_input *kbd_cont
             } break;
         }
     }
-} 
+}
+
+global_variable int64 PerfCountFrequency;
+
+// get realtime clock
+inline LARGE_INTEGER Win32GetWallClock()
+{
+    LARGE_INTEGER end_counter;
+    QueryPerformanceCounter(&end_counter);
+    return end_counter;
+}
+
+// get elapsed seconds
+inline real32 Win32GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end)
+{
+    real32 seconds_elapsed_for_work = (real32)(end.QuadPart - start.QuadPart) / (real32)PerfCountFrequency;
+    return seconds_elapsed_for_work;
+}
 
 //
 // ENTRY POINT
@@ -610,19 +677,28 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     // timer stuff
     LARGE_INTEGER perf_count_frequency_result;
     QueryPerformanceFrequency(&perf_count_frequency_result);
-    int64 perf_count_frequency = perf_count_frequency_result.QuadPart;
+    PerfCountFrequency = perf_count_frequency_result.QuadPart;
 
+    // set windows scheduler granularity to 1ms 
+    // so the sleep at end can be more granular
+    UINT desired_scheuler_ms = 1;
+    bool32 sleep_is_granular = (timeBeginPeriod(desired_scheuler_ms) == TIMERR_NOCANDO);
+    
     Win32LoadXInput();
-
-    WNDCLASS window_class = {};
-
     Win32ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
-
+    
+    // window class
+    WNDCLASS window_class = {};
     window_class.style = CS_VREDRAW|CS_HREDRAW|CS_OWNDC;
     window_class.lpfnWndProc = Win32MainWindowCallback; 
     window_class.hInstance = instance;
     window_class.lpszClassName = "CPP Graphics Engine Window Class";
     // maybe add icon
+
+// define to make constant
+#define monitor_refresh_hz 60
+#define application_update_hz  (monitor_refresh_hz / 2)
+    real32 target_seconds_per_frame = 1.0f / (real32)application_update_hz;
 
     // register the window
     if(RegisterClassA(&window_class)) {
@@ -691,18 +767,20 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
                 Running = true;
 
+                int debug_time_marker_idx = 0;
+                win32_debug_time_marker debug_time_markers[application_update_hz / 2] = {0};
+
                 // more timer stuff
-                LARGE_INTEGER last_counter;
-                QueryPerformanceCounter(&last_counter);
+                LARGE_INTEGER last_counter = Win32GetWallClock();
                 uint64 last_cycle_count = __rdtsc();
 
                 while(Running) 
                 {
-
                     // process messages
                     application_controller_input *old_kbd_controller = GetController(old_input, 0);
                     application_controller_input *new_kbd_controller = GetController(new_input, 0);
                     application_controller_input zero_controller = {};
+
                     *new_kbd_controller = zero_controller;
                     new_kbd_controller->IsConnected = true;
                     for (int button_idx = 0; button_idx < ArrayCount(new_kbd_controller->Buttons); ++button_idx)
@@ -866,30 +944,76 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                         Win32FillSoundBuffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
                     }
 
+                    // timer stuff
+                    LARGE_INTEGER work_counter = Win32GetWallClock();
+                    real32 work_seconds_elapsed = Win32GetSecondsElapsed(last_counter, work_counter);
+
+                    real32 seconds_elapsed_for_frame = work_seconds_elapsed;
+                    if(seconds_elapsed_for_frame < target_seconds_per_frame)
+                    {
+                        while(seconds_elapsed_for_frame < target_seconds_per_frame)
+                        {
+                            if(sleep_is_granular)
+                            {
+                                DWORD sleep_ms = (DWORD)(1000.0f * (target_seconds_per_frame - seconds_elapsed_for_frame));
+                                if(sleep_ms > 0)
+                                {
+                                    Sleep(sleep_ms);
+                                }
+                            }
+                            seconds_elapsed_for_frame = Win32GetSecondsElapsed(last_counter, Win32GetWallClock());
+                        }
+                    }
+                    else
+                    {
+                        // TODO: missed frame rate!
+                        // TODO: logging
+                    }
+
+                    LARGE_INTEGER end_counter = Win32GetWallClock();
+                    real64 ms_per_frame = 1000.0f * Win32GetSecondsElapsed(last_counter, end_counter);
+                    last_counter = end_counter;
+
                     win32_window_dimension dim = Win32GetWindowDimension(window);
+
+#if APPLICATION_INTERNAL // debug code
+                    Win32DebugSyncSound(
+                        &GlobalBackBuffer, ArrayCount(debug_time_markers), 
+                        debug_time_markers, &sound_output, target_seconds_per_frame);
+#endif
+
                     Win32DisplayBufferInWindow(&GlobalBackBuffer, device_context, 
                                                     dim.Width, dim.Height);
 
-                    // timer stuff
-                    uint64 end_cycle_count = __rdtsc();
-                    LARGE_INTEGER end_counter;
-                    QueryPerformanceCounter(&end_counter);
-                    uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
-                    int64 counter_elapsed = end_counter.QuadPart - last_counter.QuadPart;
-                    real64 ms_per_frame = (((1000.0f*(real64)counter_elapsed) / (real64)perf_count_frequency));
-                    real64 fps = (real64)perf_count_frequency / (real64)counter_elapsed;
-                    real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
-#if 0
-                    char Buffer[256];
-                    sprintf_s(Buffer, "%.02fms/f,  %.02ff/s,  %.02fmc/f\n", ms_per_frame, fps, mcpf);
-                    OutputDebugStringA(Buffer);
+#if APPLICATION_INTERNAL // debug code
+                    {
+                        win32_debug_time_marker *marker = &debug_time_markers[debug_time_marker_idx++];
+                        if(debug_time_marker_idx > ArrayCount(debug_time_markers))
+                        {
+                            debug_time_marker_idx = 0;
+                        }
+
+                        SecondaryBuffer->GetCurrentPosition(&marker->PlayCursor, &marker->WriteCursor);
+                    }
 #endif
-                    last_counter = end_counter;
-                    last_cycle_count = end_cycle_count;
 
                     application_input *temp = new_input;
                     new_input = old_input;
                     old_input = temp;
+
+                    uint64 end_cycle_count = __rdtsc();
+                    uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
+                    last_cycle_count = end_cycle_count; 
+
+#if 0
+
+                    real64 fps = 0.0f; // (real64)PerfCountFrequency / (real64)counter_elapsed;
+                    real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
+
+                    char fps_buffer[256];
+                    sprintf_s(fps_buffer, "%.02fms/f,  %.02ff/s,  %.02fmc/f\n", ms_per_frame, fps, mcpf);
+                    OutputDebugStringA(fps_buffer);
+#endif
                 }
             }
             else 

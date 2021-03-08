@@ -10,10 +10,10 @@ pushd .\build
 
 set win32_app_name=win32_application
 set win32_entry_point=..\code\win32_platform_layer.cpp
-set win32_libs=user32.lib gdi32.lib
+set win32_libs=user32.lib gdi32.lib winmm.lib
 set win32_exe=/Fe:%win32_app_name%.exe
 set win32_flags=/nologo -MT -Gm- /GR- /EHa- /std:c++17 -Oi -Z7 -FC -Fm%win32_app_name%.map
-set win32_warn_flags=-WX -W4 -wd4201 -wd4100 -wd4189
+set win32_warn_flags=-WX -W4 -wd4201 -wd4100 -wd4189 -wd4456
 set win32_defines=-DAPPLICATION_INTERNAL=1 -DAPPLICATION_SLOW=1 -DAPPLICATION_WIN32=1
 set win32_link=/link -opt:ref 
 

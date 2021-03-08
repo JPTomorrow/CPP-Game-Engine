@@ -128,6 +128,7 @@ struct application_input
     application_controller_input Controllers[5];
 };
 
+// get a controller / keyboard and check to see if it is avalailable
 inline application_controller_input *GetController(application_input *input, int controller_idx)
 {
     Assert(controller_idx < ArrayCount(input->Controllers));
