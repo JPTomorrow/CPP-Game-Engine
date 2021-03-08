@@ -5,7 +5,9 @@
     
     The platform that you compile to will call into this layer
     and this layer will respond with releveant information 
-    to get the platform layer to do things
+    to get the platform layer to do things. Meaning that
+    this layer is filled with platform and archetecture
+    agnostic code.
 
     Author: Justin Morrow
 */

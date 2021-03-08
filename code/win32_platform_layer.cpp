@@ -547,6 +547,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
                                        dim.Height);
             EndPaint(window, &paint);
         } break;
+        
         default:
         {
             result = DefWindowProc(window, message, wParam, lParam);
@@ -636,7 +637,8 @@ internal void Win32ProcessPendingMessages(application_controller_input *kbd_cont
                 }
 
                 bool32 alt_key_was_down = (message.lParam & (1 << 29));
-                if((vkcode == VK_F4) && alt_key_was_down) {
+                if((vkcode == VK_F4) && alt_key_was_down) 
+                {
                     Running = false;
                 }
             } break;
@@ -696,6 +698,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     // maybe add icon
 
 // define to make constant
+#define audio_latency_frames 3
 #define monitor_refresh_hz 60
 #define application_update_hz  (monitor_refresh_hz / 2)
     real32 target_seconds_per_frame = 1.0f / (real32)application_update_hz;
@@ -733,7 +736,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             sound_output.WavePeriod = sound_output.SamplesPerSecond/sound_output.ToneHz;
             sound_output.BytesPerSample = sizeof(int16)*2;
             sound_output.SecondaryBufferSize = sound_output.SamplesPerSecond*sound_output.BytesPerSample;
-            sound_output.LatencySampleCount = sound_output.SamplesPerSecond / 15;
+            sound_output.LatencySampleCount = audio_latency_frames * (sound_output.SamplesPerSecond / application_update_hz);
 
             Win32InitDSound(window, sound_output.SamplesPerSecond, sound_output.SecondaryBufferSize);
             Win32ClearBuffer(&sound_output);
@@ -774,6 +777,11 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                 LARGE_INTEGER last_counter = Win32GetWallClock();
                 uint64 last_cycle_count = __rdtsc();
 
+                // sound debug
+                DWORD last_play_cursor = 0;
+                bool32 is_sound_valid = false;
+
+                // main loop
                 while(Running) 
                 {
                     // process messages
@@ -897,20 +905,18 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                     DWORD byte_to_lock = 0;
                     DWORD target_cursor = 0;
                     DWORD bytes_to_write = 0;
-                    DWORD play_cursor = 0;
-                    DWORD write_cursor = 0;
-                    bool32 is_sound_valid = false;
                     // TODO: Tighten up sound logic so that we know where we should be
                     // writing to and can anticipate the time spent in the application update.
-                    if(SUCCEEDED(SecondaryBuffer->GetCurrentPosition(&play_cursor, &write_cursor)))
+                    if(is_sound_valid)
                     {
                         byte_to_lock = ((sound_output.RunningSampleIndex*sound_output.BytesPerSample) %
                                             sound_output.SecondaryBufferSize);
 
                         target_cursor =
-                            ((play_cursor +
+                            ((last_play_cursor +
                             (sound_output.LatencySampleCount*sound_output.BytesPerSample)) %
                             sound_output.SecondaryBufferSize);
+
                         if(byte_to_lock > target_cursor)
                         {
                             bytes_to_write = (sound_output.SecondaryBufferSize - byte_to_lock);
@@ -920,8 +926,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                         {
                             bytes_to_write = target_cursor - byte_to_lock;
                         }
-
-                        is_sound_valid = true;
                     }
 
                     // render and update
@@ -939,6 +943,18 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
                     if(is_sound_valid)
                     {
+#if APPLICATION_INTERNAL
+                        DWORD play_cursor;
+                        DWORD write_cursor;
+                        SecondaryBuffer->GetCurrentPosition(&play_cursor, &write_cursor);
+                    char text_buffer[256];
+                        _snprintf_s(text_buffer, sizeof(text_buffer),
+                                    "LPC:%u BTL:%u TC:%u BTW:%u - PC:%u WC:%u\n",
+                                    last_play_cursor, byte_to_lock, target_cursor, bytes_to_write,
+                                    play_cursor, write_cursor);
+                        OutputDebugStringA(text_buffer);
+#endif   
+
                         // we render the application and then fill the sound buffer with the 
                         // buffer data passed back from the render loop
                         Win32FillSoundBuffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
@@ -976,7 +992,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
                     win32_window_dimension dim = Win32GetWindowDimension(window);
 
-#if APPLICATION_INTERNAL // debug code
+#if APPLICATION_INTERNAL // NOTE: debug sound code
                     Win32DebugSyncSound(
                         &GlobalBackBuffer, ArrayCount(debug_time_markers), 
                         debug_time_markers, &sound_output, target_seconds_per_frame);
@@ -985,15 +1001,31 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                     Win32DisplayBufferInWindow(&GlobalBackBuffer, device_context, 
                                                     dim.Width, dim.Height);
 
-#if APPLICATION_INTERNAL // debug code
+                    DWORD play_cursor;
+                    DWORD write_cursor;
+                    if(SecondaryBuffer->GetCurrentPosition(&play_cursor, &write_cursor) == DS_OK)
                     {
+                        last_play_cursor = play_cursor;
+                        if(!is_sound_valid)
+                        {
+                            sound_output.RunningSampleIndex = write_cursor / sound_output.BytesPerSample;
+                            is_sound_valid = true;
+                        }
+                    }
+                    else
+                    {
+                        is_sound_valid = false;
+                    }
+#if APPLICATION_INTERNAL //NOTE: debug sound code
+                    {
+                        Assert(debug_time_marker_idx < ArrayCount(debug_time_markers))
                         win32_debug_time_marker *marker = &debug_time_markers[debug_time_marker_idx++];
-                        if(debug_time_marker_idx > ArrayCount(debug_time_markers))
+                        if(debug_time_marker_idx == ArrayCount(debug_time_markers))
                         {
                             debug_time_marker_idx = 0;
                         }
-
-                        SecondaryBuffer->GetCurrentPosition(&marker->PlayCursor, &marker->WriteCursor);
+                        marker->PlayCursor = play_cursor;
+                        marker->WriteCursor = write_cursor;
                     }
 #endif
 
