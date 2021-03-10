@@ -59,12 +59,12 @@ void RenderWeirdGradient(offscreen_graphics_buffer *buffer, int x_offset, int y_
 // the main application update loop
 // all platform non-specific code gets executed here
 void ApplicationUpdateAndRender(
-    application_memory *memory, application_input *input,  
-    offscreen_graphics_buffer * buffer, 
-    application_sound_output_buffer *sound_buffer)
+    application_memory *memory, application_input *input, offscreen_graphics_buffer * buffer)
 {
     Assert(sizeof(application_state) <= memory->PermanentStorageSize);
     
+    // this app_state is how you access the application state from permanent storage
+    // so you can call this in many other functions and it will retreive the game state
     application_state *app_state = (application_state *)memory->PermanentStorage;
     if(!memory->IsInitialized)
     {
@@ -117,7 +117,12 @@ void ApplicationUpdateAndRender(
             app_state->GreenOffset += 1;
         }
     }
-    
-    ApplicationOutputSound(sound_buffer, app_state->ToneHz);
+
     RenderWeirdGradient(buffer, app_state->BlueOffset, app_state->GreenOffset);
+}
+
+internal void AppGetSoundSamples(application_memory *memory, application_sound_output_buffer *sound_buffer)
+{
+    application_state *app_state = (application_state *)memory->PermanentStorage;
+    ApplicationOutputSound(sound_buffer, app_state->ToneHz);
 }

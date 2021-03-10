@@ -155,8 +155,10 @@ struct application_state
     int BlueOffset;
 };
 
-void ApplicationUpdateAndRender(application_memory *memory, application_input *input, offscreen_graphics_buffer *buffer, 
-                         application_sound_output_buffer *sound_buffer);
+internal void ApplicationUpdateAndRender(application_memory *memory, application_input *input, offscreen_graphics_buffer *buffer);
+
+// NOTE: This has to be a very fast function in order to not incur sound latency
+internal void AppGetSoundSamples(application_memory *memory, application_sound_output_buffer *sound_buffer);
 
 #define APPLICATION_H
 #endif
