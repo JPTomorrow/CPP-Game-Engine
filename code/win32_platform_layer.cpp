@@ -816,6 +816,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                 bool32 is_sound_valid = false;
                 DWORD audio_latency_bytes = 0;
                 real32 audio_latency_seconds = 0;
+                asd
 
                 // main loop
                 while(Running) 
