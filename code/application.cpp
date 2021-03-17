@@ -58,8 +58,7 @@ void RenderWeirdGradient(offscreen_graphics_buffer *buffer, int x_offset, int y_
 
 // the main application update loop
 // all platform non-specific code gets executed here
-void ApplicationUpdateAndRender(
-    application_memory *memory, application_input *input, offscreen_graphics_buffer * buffer)
+APP_UPDATE_AND_RENDER(AppUpdateAndRender)
 {
     Assert(sizeof(application_state) <= memory->PermanentStorageSize);
     
@@ -121,7 +120,7 @@ void ApplicationUpdateAndRender(
     RenderWeirdGradient(buffer, app_state->BlueOffset, app_state->GreenOffset);
 }
 
-internal void AppGetSoundSamples(application_memory *memory, application_sound_output_buffer *sound_buffer)
+APP_GET_SOUND_SAMPLES(AppGetSoundSamples)
 {
     application_state *app_state = (application_state *)memory->PermanentStorage;
     ApplicationOutputSound(sound_buffer, app_state->ToneHz);

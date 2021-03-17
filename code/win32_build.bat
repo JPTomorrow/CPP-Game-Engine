@@ -21,6 +21,7 @@ set win32_link=/link -opt:ref
 if "%x86_x64%" == "x86" ( set win32_link=%win32_link% -subsystem:windows,5.1)
 
 :: win32 compile
-cl %win32_flags% %win32_warn_flags% %win32_defines% %win32_exe% %win32_entry_point% %win32_link% %win32_libs%
+cl %win32_flags% %win32_warn_flags% %win32_defines% %win32_exe% ..\code\application.cpp %win32_link% /DLL
+cl %win32_flags% %win32_warn_flags% %win32_defines% %win32_exe% ..\code\win32_platform_layer.cpp %win32_link% %win32_libs%
 
 popd

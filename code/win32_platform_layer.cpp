@@ -22,39 +22,50 @@
   - GetKeyboardLayout (for French keyboards, international WASD support)
 */
 
+#include "application.h"
+
 #include <windows.h>
-#include <stdint.h>
-#include <Xinput.h>
-#include <dsound.h>
-#include <math.h>
-#include <string>
 #include <stdio.h>
 #include <malloc.h>
+#include <Xinput.h>
+#include <dsound.h>
 
-#define internal static  // use for functions that are private to file scope
-#define local_persist static  // use for local scope static variables
-#define global_variable static  // use for static global variables
-
-typedef uint8_t  uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;    
-typedef uint64_t uint64;
-
-typedef int8_t  int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
-
-typedef int32 bool32;
-
-typedef float real32;
-typedef double real64;
-
-#define Pi32 3.14159265359f // large approx
-
-#include "application.h"
-#include "application.cpp"
 #include "win32_platform_layer.h"
+
+//
+// Dynamic load game code
+//
+
+struct win32_app_code
+{
+    HMODULE AppCodeDLL;
+    app_update_and_render *UpdateAndRender;
+    app_get_sound_samples *GetSoundSamples;
+
+    bool32 IsValid;
+};
+
+internal win32_app_code Win32LoadGameCode()
+{
+    win32_app_code result = {};
+    result.AppCodeDLL = LoadLibrary("application.dll");
+
+    if(result.AppCodeDLL)
+    {
+        result.UpdateAndRender = (app_update_and_render *)GetProcAddress(result.AppCodeDLL, "AppUpdateAndRender");
+        result.GetSoundSamples = (app_get_sound_samples *)GetProcAddress(result.AppCodeDLL, "AppGetSoundSamples");
+
+        result.IsValid = (result.UpdateAndRender && result.GetSoundSamples);
+    }
+
+    if(!result.IsValid)
+    {
+        result.UpdateAndRender = AppUpdateAndRenderStub;
+        result.GetSoundSamples = AppGetSoundSamplesStub;
+    }
+
+    return result;
+}
 
 //
 // Input
@@ -355,15 +366,18 @@ internal void Win32DebugSyncSound(
         int bottom = pad_y + line_height;  
 
         DWORD play_color = 0xFFFFFFFF;
-        DWORD write_color = 0xFFFF0000;   
+        DWORD write_color = 0xFFFF0000;
+        DWORD expected_flip_color = 0xFFFFFF00;
+        DWORD play_window_color = 0xFFFF00FF;
         if(marker_idx == current_marker_idx)
         {
             top += line_height + pad_y;
-            bottom += line_height + pad_y; 
+            bottom += line_height + pad_y;
 
+            int first_top = top;
             Win32DrawSoundBufferMarker(back_buffer, sound_output, cof, pad_x, top, bottom, this_marker->OutputPlayCursor, play_color);
             Win32DrawSoundBufferMarker(back_buffer, sound_output, cof, pad_x, top, bottom, this_marker->OutputWriteCursor, write_color);
-            
+
             top += line_height + pad_y;
             bottom += line_height + pad_y; 
 
@@ -372,11 +386,14 @@ internal void Win32DebugSyncSound(
             
             top += line_height + pad_y;
             bottom += line_height + pad_y; 
-        }
 
+            Win32DrawSoundBufferMarker(back_buffer, sound_output, cof, pad_x, first_top, bottom, this_marker->ExpectedFlipPlayCursor, expected_flip_color);
+        }
+ 
         Win32DrawSoundBufferMarker(back_buffer, sound_output, cof, pad_x, top, bottom, this_marker->FlipPlayCursor, play_color);
+        Win32DrawSoundBufferMarker(back_buffer, sound_output, cof, pad_x, top, bottom, this_marker->FlipPlayCursor + 480 * sound_output->BytesPerSample, play_window_color);
         Win32DrawSoundBufferMarker(back_buffer, sound_output, cof, pad_x, top, bottom, this_marker->FlipWriteCursor, write_color);        
-    }
+    } 
 }
 
 //
@@ -384,7 +401,7 @@ internal void Win32DebugSyncSound(
 //
 
 // DEBUG: read the contents of a file 
-internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename)
+debug_read_file_result DEBUGPlatformReadEntireFile(char *filename)
 {
     debug_read_file_result result = {};
     
@@ -433,7 +450,7 @@ internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename)
 }
 
 // DEBUG: free file memory
-internal void DEBUGPlatformFreeFileMemory(void *memory)
+void DEBUGPlatformFreeFileMemory(void *memory)
 {
     if(memory)
     {
@@ -442,7 +459,7 @@ internal void DEBUGPlatformFreeFileMemory(void *memory)
 }
 
 // DEBUG: write bytes into a file
-internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32 memory_size, void *memory)
+bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32 memory_size, void *memory)
 {
     bool32 result = false;
     
@@ -708,6 +725,7 @@ inline real32 Win32GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end)
 // the main entry point for this program
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode)
 {
+    win32_app_code dynamic_app_code = Win32LoadGameCode();
     // timer stuff
     LARGE_INTEGER perf_count_frequency_result;
     QueryPerformanceFrequency(&perf_count_frequency_result);
@@ -808,6 +826,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
                 // more timer stuff
                 LARGE_INTEGER last_counter = Win32GetWallClock();
+                LARGE_INTEGER flip_wall_clock = Win32GetWallClock();
                 uint64 last_cycle_count = __rdtsc();
 
                 // sound vars
@@ -816,7 +835,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                 bool32 is_sound_valid = false;
                 DWORD audio_latency_bytes = 0;
                 real32 audio_latency_seconds = 0;
-                asd
 
                 // main loop
                 while(Running) 
@@ -948,7 +966,10 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                     b.Width = GlobalBackBuffer.Width; 
                     b.Height = GlobalBackBuffer.Height;
                     b.Pitch = GlobalBackBuffer.Pitch; 
-                    ApplicationUpdateAndRender(&app_memory, new_input, &b);
+                    dynamic_app_code.UpdateAndRender(&app_memory, new_input, &b);
+
+                    LARGE_INTEGER audio_wall_clock = Win32GetWallClock();
+                    real64 frame_begin_to_audio_begin_sec = 1000.0f * Win32GetSecondsElapsed(flip_wall_clock, audio_wall_clock);
 
                     DWORD play_cursor;
                     DWORD write_cursor;
@@ -983,6 +1004,9 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                         // handle laggy video card
                         DWORD expected_sound_bytes_per_frame = 
                             (sound_output.SamplesPerSecond * sound_output.BytesPerSample)  / application_update_hz;
+
+                        real32 seconds_left_until_flip = target_seconds_per_frame - (real32)frame_begin_to_audio_begin_sec;
+                        DWORD expected_bytes_until_flip = (DWORD)((seconds_left_until_flip / target_seconds_per_frame) * (real32)expected_sound_bytes_per_frame);
 
                         DWORD expected_frame_boundary_byte = play_cursor + expected_sound_bytes_per_frame; 
                         DWORD safe_write_cursor = write_cursor;
@@ -1022,13 +1046,14 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
                         sound_buffer.SamplesPerSecond = sound_output.SamplesPerSecond;
                         sound_buffer.SampleCount = bytes_to_write / sound_output.BytesPerSample;
                         sound_buffer.Samples = samples;
-                        AppGetSoundSamples(&app_memory, &sound_buffer);
+                        dynamic_app_code.GetSoundSamples(&app_memory, &sound_buffer);
 
                         win32_debug_time_marker *marker = &debug_time_markers[debug_time_marker_idx];
                         marker->OutputPlayCursor = play_cursor;
                         marker->OutputWriteCursor = write_cursor;
                         marker->OutputByteCount = bytes_to_write;
                         marker->OutputLocation = byte_to_lock;
+                        marker->ExpectedFlipPlayCursor = expected_frame_boundary_byte;
 
 #if APPLICATION_INTERNAL // NOTE: sound code debug 
                         
@@ -1114,6 +1139,8 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
                     Win32DisplayBufferInWindow(&GlobalBackBuffer, device_context, 
                                                     dim.Width, dim.Height);
+                    
+                    flip_wall_clock = Win32GetWallClock();
 
 #if APPLICATION_INTERNAL //NOTE: debug sound code
                     {

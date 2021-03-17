@@ -12,6 +12,31 @@
 
 #if !defined(APPLICATION_H)
 
+#include <stdint.h>
+#include <math.h>
+#include <string>
+
+#define internal static  // use for functions that are private to file scope
+#define local_persist static  // use for local scope static variables
+#define global_variable static  // use for static global variables
+
+typedef uint8_t  uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;    
+typedef uint64_t uint64;
+
+typedef int8_t  int8;
+typedef int16_t int16;
+typedef int32_t int32;
+typedef int64_t int64;
+
+typedef int32 bool32;
+
+typedef float real32;
+typedef double real64;
+
+#define Pi32 3.14159265359f // large approx 
+
 #if APPLICATION_SLOW
 // TODO: Complete assertion macro
 #define Assert(Expression) if(!(Expression)) {*(int *)0 = 0;}
@@ -53,9 +78,14 @@ struct debug_read_file_result
    blocking and the write doesn't protect against lost data!
 */
 
-internal debug_read_file_result DEBUGPlatformReadEntireFile(char *filename);
-internal void DEBUGPlatformFreeFileMemory(void *memory);
-internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32 memory_size, void *memory);
+#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) void name(char *filename)
+typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
+
+#define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *memory)
+typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(app_update_and_render);
+
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) void name(char *filename, uint32 memory_size, void *memory)
+typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
 #endif
 
 /*
@@ -155,10 +185,14 @@ struct application_state
     int BlueOffset;
 };
 
-internal void ApplicationUpdateAndRender(application_memory *memory, application_input *input, offscreen_graphics_buffer *buffer);
+// these functions are dynamically loaded app code for runtime changing
+#define APP_UPDATE_AND_RENDER(name) void name(application_memory *memory, application_input *input, offscreen_graphics_buffer *buffer)
+typedef APP_UPDATE_AND_RENDER(app_update_and_render);
+APP_UPDATE_AND_RENDER(AppUpdateAndRenderStub) {}
 
-// NOTE: This has to be a very fast function in order to not incur sound latency
-internal void AppGetSoundSamples(application_memory *memory, application_sound_output_buffer *sound_buffer);
+#define APP_GET_SOUND_SAMPLES(name) void name(application_memory *memory, application_sound_output_buffer *sound_buffer)
+typedef APP_GET_SOUND_SAMPLES(app_get_sound_samples);
+APP_GET_SOUND_SAMPLES(AppGetSoundSamplesStub) {} 
 
 #define APPLICATION_H
 #endif
